@@ -29,7 +29,7 @@ void delay_ms(u32 xms)
 #if USE_MY_DEBUG
 // 通过一个引脚输出数据
 // 发送一次数据约420ms
-#define DEBUG_PIN P22D
+#define DEBUG_PIN P12D
 void send_data_msb(u32 send_data)
 {
     // 先发送格式头
@@ -116,6 +116,8 @@ void IO_Init(void)
 
     PMOD = 0x00;  // P00、P01、P13 io端口值从寄存器读，推挽输出
     DRVCR = 0x80; // 普通驱动
+    // DRVCR = 0x00; // 普通端口选择增强驱动电流输出
+    // DRVCR = 0x30; //
 }
 
 /************************************************
@@ -125,75 +127,75 @@ void IO_Init(void)
 ;  *    @返回参数          :0 校准成功  1校准失败
 ;  *    用户按照需求选择是否校准
 ;  ***********************************************/
-uint8_t ADC_Zero_ADJ(void)
-{
-    ADCR0 = 0xeb;            // 使能ADC、12位数据H8L4、GND通道
-    ADCR1 = 0x80;            // 32分频、内部2V
-    ADCR2 = 0xff;            // 固定为15ADCLK
-    OSADJCR |= DEF_SET_BIT7; // 使能零点校准、负向修调
-    ADEOC = 0;
-    while (!ADEOC)
-        ;
-    if ((ADRH == 0) && ((ADRL & 0x0F) == 0)) // 结果是否为0
-    {
-        OSADJTD = 1; // 正向修调
-        OSADJCR |= 0x3F;
-        ADEOC = 0;
-        while (!ADEOC)
-            ;
-        if ((ADRH == 0) && ((ADRL & 0x0F) == 0)) // 结果是否为0
-        {
-            ADEN = 0;
-            return PASS;
-        }
-        else
-        {
-            while (1)
-            {
-                if (OSADJCR & 0x3f)
-                {
-                    OSADJCR--;
-                    ADEOC = 0;
-                    while (!ADEOC)
-                        ;
-                    if ((ADRH == 0) && ((ADRL & 0x0F) == 0)) // 结果是否为0
-                    {
-                        ADEN = 0;
-                        return PASS;
-                    }
-                }
-                else
-                {
-                    ADEN = 0;
-                    return FAIL;
-                }
-            }
-        }
-    }
-    else
-    {
-        while (1)
-        {
-            if ((OSADJCR & 0x3f) == 0x3f)
-            {
-                ADEN = 0;
-                return FAIL;
-            }
-            else
-            {
-                OSADJCR++;
-                ADEOC = 0;
-                while (!ADEOC)
-                    ;
-                if ((ADRH == 0) && ((ADRL & 0x0F) == 0)) // 结果是否为0
-                {
-                    ADEN = 0;
-                    return PASS;
-                }
-            }
-        }
-    }
-}
+// uint8_t ADC_Zero_ADJ(void)
+// {
+//     ADCR0 = 0xeb;            // 使能ADC、12位数据H8L4、GND通道
+//     ADCR1 = 0x80;            // 32分频、内部2V
+//     ADCR2 = 0xff;            // 固定为15ADCLK
+//     OSADJCR |= DEF_SET_BIT7; // 使能零点校准、负向修调
+//     ADEOC = 0;
+//     while (!ADEOC)
+//         ;
+//     if ((ADRH == 0) && ((ADRL & 0x0F) == 0)) // 结果是否为0
+//     {
+//         OSADJTD = 1; // 正向修调
+//         OSADJCR |= 0x3F;
+//         ADEOC = 0;
+//         while (!ADEOC)
+//             ;
+//         if ((ADRH == 0) && ((ADRL & 0x0F) == 0)) // 结果是否为0
+//         {
+//             ADEN = 0;
+//             return PASS;
+//         }
+//         else
+//         {
+//             while (1)
+//             {
+//                 if (OSADJCR & 0x3f)
+//                 {
+//                     OSADJCR--;
+//                     ADEOC = 0;
+//                     while (!ADEOC)
+//                         ;
+//                     if ((ADRH == 0) && ((ADRL & 0x0F) == 0)) // 结果是否为0
+//                     {
+//                         ADEN = 0;
+//                         return PASS;
+//                     }
+//                 }
+//                 else
+//                 {
+//                     ADEN = 0;
+//                     return FAIL;
+//                 }
+//             }
+//         }
+//     }
+//     else
+//     {
+//         while (1)
+//         {
+//             if ((OSADJCR & 0x3f) == 0x3f)
+//             {
+//                 ADEN = 0;
+//                 return FAIL;
+//             }
+//             else
+//             {
+//                 OSADJCR++;
+//                 ADEOC = 0;
+//                 while (!ADEOC)
+//                     ;
+//                 if ((ADRH == 0) && ((ADRL & 0x0F) == 0)) // 结果是否为0
+//                 {
+//                     ADEN = 0;
+//                     return PASS;
+//                 }
+//             }
+//         }
+//     }
+// }
 /************************************************
 ;  *    @函数名            : ADC_Init
 ;  *    @说明              : ADC初始化
@@ -219,8 +221,8 @@ void adc_config(void)
 
     P00PU = P00PD = 0; // 关闭上下拉
     P00OE = 0;         // 输入模式
-    P00MC = 1;         // 输入通道连通(可以不用写这一项)
-    P00DC = 1;         // 使能模拟功能
+    // P00MC = 1;         // 输入通道连通(可以不用写这一项)
+    P00DC = 1; // 使能模拟功能
 
     ADCR0 = 0x0A; // 选择通道AN0、12位精度、不开始ad转换、使能adc
     // adc时钟使用FHIRC的256分频(最能过滤外部输入的波动，保证 AD 转换的精度)，
@@ -286,8 +288,8 @@ void Sys_Init(void)
     CLR_RAM();
     IO_Init();
 
-    while (ADC_Zero_ADJ())
-        ; // demo演示,校准失败一直校准，用户按照需求选择是否校准
+    // while (ADC_Zero_ADJ())
+    //     ; // demo演示,校准失败一直校准，用户按照需求选择是否校准
     adc_config();
 
     timer0_config();
@@ -349,6 +351,8 @@ void main(void)
 
     while (1)
     {
+
+#if 0
         adc_val += adc_get_val(); // 调用一次约4.5ms
         if (adc_filter_cnt < 65535)
         {
@@ -366,7 +370,7 @@ void main(void)
             // send_data_msb(adc_val); // 测试用
 
             adc_cmp_val_left = 0;
-            adc_cmp_val_right = ADC_SCAN_VAL_MAX / 9 - ADC_DELTA_VAL;
+            adc_cmp_val_right = ADC_SCAN_VAL_MAX / 9 + ADC_DELTA_VAL;
             if (adc_val >= adc_cmp_val_left &&
                 adc_val <= adc_cmp_val_right)
             {
@@ -439,7 +443,86 @@ void main(void)
             // 不用更新显示
             led_adjust_time_cnt = 0;
         }
-    }
+#endif
+
+        // LED_0_PIN = LED_ON;
+        // LED_1_PIN = LED_ON;
+        // LED_2_PIN = LED_ON;
+        // LED_3_PIN = LED_ON;
+        // LED_4_PIN = LED_ON;
+        // LED_5_PIN = LED_ON;
+        // LED_6_PIN = LED_ON;
+        // LED_7_PIN = LED_ON;
+        // LED_8_PIN = LED_ON;
+        // LED_9_PIN = LED_ON;
+
+        // 输入下拉，测试发现无法点亮LED
+        // P16PD = 1;
+        // P16OE = 0;
+
+        // send_data_msb(adc_get_val());
+        // delay_ms(100);
+
+        if (adc_val < 4294967296 - 65535)
+        {
+            if (adc_filter_cnt < 65535)
+            {
+                adc_val += adc_get_val();
+                adc_filter_cnt++;
+            }
+        }
+
+        if (timer0_cnt >= ADC_SCAN_TIME_MS)
+        {
+            timer0_cnt = 0;
+
+            adc_val /= adc_filter_cnt;
+
+            for (i = 0; i < ARRAY_SIZE(adc_val_cmp_table); i++)
+            {
+                if (adc_val <= adc_val_cmp_table[i] + ADC_DELTA_VAL)
+                {
+                    cur_fuel_level = 9 - i;
+                    break;
+                }
+            }
+
+            adc_val = 0;
+            adc_filter_cnt = 0;
+        }
+
+        // 更新LED显示（注意变化要连贯）
+        if (last_fuel_level != cur_fuel_level)
+        {
+            flag_is_refresh_led = 1;
+
+            if (led_adjust_time_cnt >= LED_REFRESH_INTERVAL_MS)
+            {
+                led_adjust_time_cnt = 0;
+                if (last_fuel_level < cur_fuel_level)
+                {
+                    // 如果之前检测到的油量等级(剩余格数)小于现在检测到的
+                    // LED显示的数量要逐渐增多，从左往右
+                    last_fuel_level++;
+                }
+                else
+                {
+                    // 如果之前检测到的油量等级(剩余格数)大于现在检测到的
+                    // LED显示的数量要逐渐减少，从右往左
+                    last_fuel_level--;
+                }
+
+                led_show_buf_update(last_fuel_level);
+                led_show_refresh();
+                flag_is_refresh_led = 0;
+            }
+        }
+        else
+        {
+            // 如果之前检测到的油量等级(剩余格数)和现在的是相等的
+            // 不用更新显示
+        }
+    } // while (1)
 }
 
 /************************************************
@@ -462,6 +545,14 @@ void int_isr(void) __interrupt
         if (timer0_cnt < 65535) // 防止计数溢出
         {
             timer0_cnt++;
+        }
+
+        if (flag_is_refresh_led)
+        {
+            if (led_adjust_time_cnt < 65535)
+            {
+                led_adjust_time_cnt++;
+            }
         }
 
         T0IF = 0; // 清除中断标志
