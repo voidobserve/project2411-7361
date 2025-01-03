@@ -351,100 +351,6 @@ void main(void)
 
     while (1)
     {
-
-#if 0
-        adc_val += adc_get_val(); // 调用一次约4.5ms
-        if (adc_filter_cnt < 65535)
-        {
-            // 累加时，不能超过变量类型对应的最大值
-            adc_filter_cnt++;
-        }
-
-        // 用定时器，连续检测 ADC_SCAN_TIME_MS 时间的 ad值,取平均值
-        if (timer0_cnt >= ADC_SCAN_TIME_MS)
-        {
-            timer0_cnt = 0; // 清空计数值
-
-            adc_val /= adc_filter_cnt;
-            adc_filter_cnt = 0;
-            // send_data_msb(adc_val); // 测试用
-
-            adc_cmp_val_left = 0;
-            adc_cmp_val_right = ADC_SCAN_VAL_MAX / 9 + ADC_DELTA_VAL;
-            if (adc_val >= adc_cmp_val_left &&
-                adc_val <= adc_cmp_val_right)
-            {
-                // 如果油量已经接近满格：
-                cur_fuel_level = 9;
-            }
-            else
-            {
-                // 如果不是满格油量
-                // 判断当前油量是否在第0级~第8级(第0格~第8格对应的位置)
-                for (i = 1; i < 9; i++)
-                {
-                    adc_cmp_val_left = ADC_SCAN_VAL_MAX * i / 9 + ADC_DELTA_VAL;
-                    adc_cmp_val_right = ADC_SCAN_VAL_MAX * (i + 1) / 9 - ADC_DELTA_VAL;
-
-                    if (adc_val >= adc_cmp_val_left &&
-                        adc_val <= adc_cmp_val_right)
-                    {
-                        cur_fuel_level = 9 - i; // 记录当前油量对应的级别(剩余 第 9 - i 格油量)
-                        break;
-                    }
-
-                    // 判断当前油量是否在低0级(第0格对应的位置)
-                    // 如果只有最后一格油量，熄灭LED1~9
-                    if (adc_val >= ADC_SCAN_VAL_MAX - ADC_DELTA_VAL)
-                    {
-                        cur_fuel_level = 0;
-                        break;
-                    }
-                }
-            }
-
-            // 判断完成后，清除adc值
-            adc_val = 0;
-
-        } // if (timer0_cnt >= ADC_SCAN_TIME_MS)
-
-        // 更新LED显示（注意变化要连贯）
-        if (last_fuel_level != cur_fuel_level)
-        {
-            if (last_fuel_level < cur_fuel_level)
-            {
-                // 如果之前检测到的油量等级(剩余格数)小于现在检测到的
-                // LED显示的数量要逐渐增多，从左往右
-                if (led_adjust_time_cnt >= LED_REFRESH_INTERVAL_MS)
-                {
-                    led_adjust_time_cnt = 0;
-                    last_fuel_level++;
-                }
-            }
-            else
-            {
-                // 如果之前检测到的油量等级(剩余格数)大于现在检测到的
-                // LED显示的数量要逐渐减少，从右往左
-                if (led_adjust_time_cnt >= LED_REFRESH_INTERVAL_MS)
-                {
-                    led_adjust_time_cnt = 0;
-                    last_fuel_level--;
-                }
-            }
-
-            led_adjust_time_cnt += ONE_CYCLE_TIME_MS;
-            led_show_buf_update(last_fuel_level);
-            led_show_refresh();
-            // delay_ms(1);
-        }
-        else
-        {
-            // 如果之前检测到的油量等级(剩余格数)和现在的是相等的
-            // 不用更新显示
-            led_adjust_time_cnt = 0;
-        }
-#endif
-
         // LED_0_PIN = LED_ON;
         // LED_1_PIN = LED_ON;
         // LED_2_PIN = LED_ON;
@@ -463,7 +369,7 @@ void main(void)
         // send_data_msb(adc_get_val());
         // delay_ms(100);
 
-        if (adc_val < 4294967296 - 65535)
+        if (adc_val < 4294967296 - 65535) // 防止计数溢出
         {
             if (adc_filter_cnt < 65535)
             {
@@ -475,7 +381,6 @@ void main(void)
         if (timer0_cnt >= ADC_SCAN_TIME_MS)
         {
             timer0_cnt = 0;
-
             adc_val /= adc_filter_cnt;
 
             for (i = 0; i < ARRAY_SIZE(adc_val_cmp_table); i++)

@@ -74,7 +74,7 @@
 #define LED_ON 0  // LED点亮时，引脚对应的电平
 #define LED_OFF 1 // LED熄灭时，引脚对应的电平
 
-#define ADC_SCAN_VAL_MAX (2250) // adc能检测到的最大的值(要注意不能大于变量的最大值)
+#define ADC_SCAN_VAL_MAX (2211) // adc能检测到的最大的值(要注意不能大于变量的最大值)
 // #define ADC_DELTA_VAL (34) // adc死区值(要注意不能大于变量的最大值)
 #define ADC_DELTA_VAL (ADC_SCAN_VAL_MAX / 10 / 2) // adc死区值(要注意不能大于变量的最大值)
 #define ADC_SCAN_TIME_MS (500)                    // adc扫描周期（单位:ms）(要注意不能大于变量的最大值)
