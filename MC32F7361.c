@@ -349,6 +349,9 @@ void main(void)
     led_show_refresh();
     delay_ms(500);
 
+    // last_fuel_level = 9; // 默认为9格油量
+    // cur_fuel_level = 9;
+
     while (1)
     {
         // LED_0_PIN = LED_ON;
@@ -378,6 +381,7 @@ void main(void)
             }
         }
 
+        // 每隔一段时间，更新一次 cur_fuel_level
         if (timer0_cnt >= ADC_SCAN_TIME_MS)
         {
             timer0_cnt = 0;
@@ -390,6 +394,13 @@ void main(void)
                     cur_fuel_level = 9 - i;
                     break;
                 }
+            }
+
+            // if (adc_val >= ADC_SCAN_VAL_MAX + ADC_DELTA_VAL)
+            if (adc_val >= ADC_SCAN_VAL_MAX + ((u16)4095 - ADC_SCAN_VAL_MAX) / 2)
+            {
+                // 如果检测到的ad值比检测范围最大值还要大，则认为没有接油量
+                cur_fuel_level = 0; // 目标设置为只显示第0格油量
             }
 
             adc_val = 0;
@@ -426,6 +437,7 @@ void main(void)
         {
             // 如果之前检测到的油量等级(剩余格数)和现在的是相等的
             // 不用更新显示
+            led_adjust_time_cnt = 0;
         }
     } // while (1)
 }
