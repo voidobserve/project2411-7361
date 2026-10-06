@@ -46,7 +46,7 @@
 #define PASS 0
 #endif
 
-#define USER_DEBUG_ENABLE 1
+#define USER_DEBUG_ENABLE 0
 
 #define LED_0_PIN P17D // 最后一格油量对应的LED
 #define LED_1_PIN P01D
@@ -66,7 +66,8 @@
 #define ADC_DEAD_ZONE_VAL  (ADC_SCAN_VAL_MAX / 10 / 2) // adc死区值
 #define ADC_VAL_FULL_SCALE (4095)                      // adc满量程值
 // 未接油量判定阈值：油量检测脚悬空时，ad值非常接近满量程
-#define ADC_VAL_UNCONNECTED_TH (ADC_VAL_FULL_SCALE - 100)
+// #define ADC_VAL_UNCONNECTED_TH (ADC_VAL_FULL_SCALE - 100)
+#define ADC_VAL_UNCONNECTED_TH (2493) // 使用跟样机接近的值
 
 // LED刷新显示的时间间隔
 #define LED_REFRESH_INTERVAL_MS                   (1000)

@@ -11,17 +11,21 @@
 
 #include "user.h"
 
-// 滑动平均
-#define ADC_VAL_BUF_LEN 80
+// 滑动平均：16 点窗口(2 的幂)，用 u16 累加 + 右移求平均
+// 注意：不要写 `tmp_val_u32 += adc_val_buf[i]`（u32 累加器 += volatile 数组元素）：
+//   本工具链(WinScopeIDE v1.33.01 的 sdcc 后端)会漏掉"把样本高字节载入 A"的那句 MOVAR，
+//   低字节相加没有进位时会把低字节加到高位上，和值被吹大约 17 倍
+//   （实测：真实均值 939 → 算出来 0x3F38 = 16184）。
+#define ADC_VAL_BUF_LEN 16
 volatile u16 adc_val_buf[ADC_VAL_BUF_LEN] = {0};
 volatile u8 adc_val_buf_cnt = 0;
 volatile u8 is_adc_val_buf_initialized = 0;
+// 16 个样本的和：最大 16 * 4095 = 65520 ≤ 65535，u16 不会溢出
+volatile u16 adc_sum = 0;
 
-volatile u8 adc_get_val_cnt = 0;
 volatile u16 adc_get_filter_val_cnt = 0;
 
 volatile u16 tmp_val_u16 = 0;
-volatile u32 tmp_val_u32 = 0;
 
 volatile u8 led_show_buff[10]; // led显存
 
@@ -128,41 +132,59 @@ void send_data_msb(u32 send_data)
 //  FCPU  : 8MHz
 #define UART_TX_PIN P12D
 #define UART_BAUD   9600UL
+// #define UART_BAUD 2400UL
 
-// 与 delay_ms() 里同形状的忙等：306 次 ≈ 1ms(FCPU = 8MHz)，即一次循环 ≈ 3.26us
-// 一位的时间 = 忙等 + 固定开销(算电平/写脚/移位，约 0.8 次循环，故减 1)
-// 9600bps → 306 * 104 / 1000 - 1 ≈ 31 次 ≈ 104us(理论值 104.17us)
-// 用逻辑分析仪量位宽后微调：偏大就减 1、偏小就加 1(±1 约 ±3%)
+// 实测标定(逻辑分析仪 @FCPU=8MHz)：
+//   UART_CAL_LOOPS 次忙等 + 该位的固定开销 = UART_CAL_US 微秒
+//   实测 31 次 → 115.5us(约 3.7us/次，比 delay_ms() 注释里的 3.26us 慢约 11%)
+// 所以直接按比例换算一位的循环次数：
+//   9600bps → 104 * 31 / 115 ≈ 28 次 ≈ 104.3us(理论值 104.17us)
+//   2400bps → 416 * 31 / 115 ≈ 112 次   19200bps → 52 * 31 / 115 ≈ 14 次
+// 换波特率只改 UART_BAUD；要更准就用逻辑分析仪量位宽后再改标定值
+#define UART_CAL_LOOPS 31UL  // 标定时的忙等次数
+#define UART_CAL_US    115UL // 标定时实测的位宽(单位:us)
 #define UART_BIT_LOOPS                                                         \
-    (((306UL * (1000000UL / UART_BAUD) + 500UL) / 1000UL) - 1UL)
+    (((1000000UL / UART_BAUD) * UART_CAL_LOOPS + UART_CAL_US / 2) / UART_CAL_US)
+// 停止位补偿：从停止位写脚到下一字节起始位写脚，中间还有
+// "循环退出+RETURN + uart_send_u32 取字节 + 下一字节的 CALL 和函数入口"，
+// 实测多出约 7us(≈ 2 次忙等)，这里减掉，保证停止位也是 1 个位宽
+#define UART_STOP_COMP_LOOPS 2UL
 
 // 发送一个字节(8N1)
 void uart_send_byte(u8 dat)
 {
     u8 i;
-    u8 b; // 本位要发送的电平
     u32 n;
 
-    for (i = 0; i < 10; i++) // 起始位 + 8 数据位 + 停止位
-    {
-        if (0 == i) {
-            b = 0; // 起始位
-        } else if (9 == i) {
-            b = 1; // 停止位
-        } else {
-            b = (u8)(dat & 0x01); // 数据位，低位先发
-        }
-        UART_TX_PIN = b;
+    GIE = 0; // 关全局中断
 
-        // 一位的时间。注意：这里是"固定开销 + 固定忙等"，
-        // 每一位的循环次数必须一致，否则位宽会不均匀导致串口误码
+    // 起始位
+    UART_TX_PIN = 0;
+    n = UART_BIT_LOOPS;
+    while (n--) {
+        Nop();
+    }
+
+    // 8 个数据位，低位先发。
+    // 注意：每个位走完全相同的代码，位宽才一致(不要在循环里加分支)
+    for (i = 0; i < 8; i++) {
+        UART_TX_PIN = (u8)(dat & 0x01);
         n = UART_BIT_LOOPS;
         while (n--) {
             Nop();
         }
-
         dat >>= 1; // 准备下一位(固定开销)
     }
+
+    // 停止位：少等 UART_STOP_COMP_LOOPS 次，补掉"循环退出+RETURN+
+    // 取字节+CALL+函数入口"的字节边界开销，使停止位也是 1 个位宽
+    UART_TX_PIN = 1;
+    n = UART_BIT_LOOPS - UART_STOP_COMP_LOOPS;
+    while (n--) {
+        Nop();
+    }
+
+    GIE = 1; // 开全局中断
 }
 
 // 发送 u32：拆成 4 字节，高字节先发(串口助手按 hex 直接读数值)
@@ -174,7 +196,7 @@ void uart_send_u32(u32 dat)
     uart_send_byte((u8)dat);
 }
 
-#endif // #if USER_DEBUG_ENABLE
+#endif
 
 /************************************************
 ;  *    @函数名          : CLR_RAM
@@ -250,7 +272,11 @@ u16 adc_convert(void)
 {
     u8 i = 0;
     u8 val;
-    u32 ret = 0;
+    /*
+        这里不能用 volatile u32来计算，可能会被编译器优化，导致计算错误
+        改用 u16，哪怕采集到16次最大值4095，求和之后的值是65520，不会超过 65535
+    */
+    u16 ret = 0;
     for (i = 0; i < 16; i++) {
         ADEOC = 0; // 写0开始ad转换
         while (!ADEOC)
@@ -358,20 +384,16 @@ void main(void)
     cur_fuel_lev = 1;
 
     while (1) {
-        // if (adc_get_val_cnt >= ADC_GET_VAL_INTERVAL) {
-        //     // 检测ad值的时间周期到来
-        //     GIE = 0;             // 关中断，保证与中断里的自增不会互相打断
-        //     adc_get_val_cnt = 0; // 原子清零
-        //     GIE = 1;
         tmp_val_u16 = adc_convert();
 #if USER_DEBUG_ENABLE
         // 软件串口发送(波特率见 UART_BAUD)；想换回原来的自定义协议就改成
-        // send_data_msb(tmp_val_u16);
         uart_send_u32(tmp_val_u16);
-        uart_send_u32(0x1234);
+        uart_send_u32(0x12345678);
 #endif
 
+        // 每个主循环采一个样本放进环形缓冲(窗口时长 = 16 × 主循环周期)
         if (0 == is_adc_val_buf_initialized) {
+            // 上电第一次：整窗先填成同一个值，避免用 0 参与平均把均值拉低
             is_adc_val_buf_initialized = 1;
             for (i = 0; i < ARRAY_SIZE(adc_val_buf); i++) {
                 adc_val_buf[i] = tmp_val_u16;
@@ -384,19 +406,24 @@ void main(void)
                 adc_val_buf_cnt = 0;
             }
         }
-        // }
 
         if (adc_get_filter_val_cnt >= ADC_GET_FILTER_VAL_INTERVAL) {
             // 获取滑动平均后的ad值的时间周期到来
             GIE = 0; // 关中断，保证16位计数清零不会被中断打断
             adc_get_filter_val_cnt = 0; // 原子清零
             GIE = 1;
-            tmp_val_u32 = 0; // 临时变量清零，用于存放滑动平均滤波后的值
+            // 16 点滑动平均：u16 累加(最大 65520，不溢出)，除 16 用右移
+            // (+8 是四舍五入，误差 ≤ ±0.5 LSB；每次重算整窗，误差不累积)
+            adc_sum = 0;
             for (i = 0; i < ARRAY_SIZE(adc_val_buf); i++) {
-                tmp_val_u32 += adc_val_buf[i];
+                adc_sum += adc_val_buf[i];
             }
-            tmp_val_u32 /= ARRAY_SIZE(adc_val_buf);
-            adc_val = (u16)tmp_val_u32;
+            adc_val = (u16)((adc_sum + 8) >> 4);
+
+#if USER_DEBUG_ENABLE
+            uart_send_u32(adc_val);
+            uart_send_u32(0x22222222);
+#endif
 
             cur_fuel_lev = 0; // 默认为低油量提示对应的挡位
             for (i = 0; i < ARRAY_SIZE(adc_val_cmp_table); i++) {
@@ -405,6 +432,11 @@ void main(void)
                     break;
                 }
             }
+
+#if USER_DEBUG_ENABLE
+            uart_send_u32(cur_fuel_lev);
+            uart_send_u32(0x33333333);
+#endif
 
             /*
                 adc_val 的区间划分：
@@ -444,6 +476,7 @@ void main(void)
             } else {
                 low_fuel_alert_enter_cnt = 0; // 检测到正常油量，进入计数清零
                 if (flag_is_in_low_fuel_alert) {
+                    // 如果在低油量提示中，检测到正常油量，开始退出计数
                     low_fuel_alert_exit_cnt++;
                     if (low_fuel_alert_exit_cnt >= LOW_FUEL_ALERT_EXIT_CNT) {
                         flag_is_in_low_fuel_alert = 0;
@@ -517,10 +550,6 @@ void int_isr(void) __interrupt
 
     if (T0IF & T0IE) {
         T0IF = 0; // 清除中断标志
-
-        if (adc_get_val_cnt < 255) {
-            adc_get_val_cnt++;
-        }
 
         if (adc_get_filter_val_cnt < ((u16)-1)) {
             adc_get_filter_val_cnt++;
